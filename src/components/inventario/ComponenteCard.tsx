@@ -47,8 +47,7 @@ export default function ComponenteCard({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && onAbrir()}
-      title="Clique para ver a ficha completa"
-      className={`card flex cursor-pointer flex-col p-4 transition-all hover:shadow-lg hover:ring-1 hover:ring-orange-500/40 ${
+      className={`card flex group cursor-pointer flex-col p-4 transition-all duration-200 ease-out hover:-translate-y-1.5 hover:border-orange-500/60 hover:shadow-xl hover:shadow-orange-500/20 active:translate-y-0 active:scale-[0.99] ${
         status !== "ok" ? "border-red-500/40 dark:border-red-500/40" : ""
       }`}
     >

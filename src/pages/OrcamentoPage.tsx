@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, PackagePlus, Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import { ExternalLink, FileDown, PackagePlus, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import EmptyState from "../components/ui/EmptyState";
 import Modal from "../components/ui/Modal";
 import PageHeader from "../components/ui/PageHeader";
@@ -85,6 +85,14 @@ export default function OrcamentoPage() {
       .filter((o) => status.includes(o.status))
       .reduce((s, o) => s + o.quantidade * Number(o.preco_unitario), 0);
 
+  const baixarPdf = async () => {
+    if (orcamentos.itens.length === 0) return toast("O orçamento está vazio.", "aviso");
+    const { gerarPdfOrcamento } = await import("../utils/pdf");
+    gerarPdfOrcamento(orcamentos.itens, { status: ["pendente", "aprovado", "comprado"] }).save(
+      `orcamento_${new Date().toISOString().slice(0, 10)}.pdf`,
+    );
+  };
+
   const resumo = [
     { label: "Pendente", valor: totalPor(["pendente"]), cor: "text-yellow-500" },
     { label: "Aprovado", valor: totalPor(["aprovado"]), cor: "text-blue-500" },
@@ -99,11 +107,16 @@ export default function OrcamentoPage() {
         titulo="Orçamento"
         subtitulo="Planejamento de compra de novos componentes."
         acao={
-          podeEditar && (
-            <button onClick={() => abrirForm(null)} className="btn-primary">
-              <Plus size={18} /> Novo item
+          <div className="flex gap-2">
+            <button onClick={() => void baixarPdf()} className="btn-ghost" title="PDF para enviar à financeira">
+              <FileDown size={18} /> PDF
             </button>
-          )
+            {podeEditar && (
+              <button onClick={() => abrirForm(null)} className="btn-primary">
+                <Plus size={18} /> Novo item
+              </button>
+            )}
+          </div>
         }
       />
 

@@ -3,6 +3,7 @@ import {
   ExternalLink,
   HandCoins,
   Layers,
+  Maximize2,
   ListChecks,
   MapPin,
   Minus,
@@ -50,6 +51,7 @@ export default function ComponenteDetalhe({ componente: c, onFechar, onEditar, o
     aberto: false,
     editando: null,
   });
+  const [imagemGrande, setImagemGrande] = useState(false);
   const [emprestimoModo, setEmprestimoModo] = useState<ModoEmprestimo | null>(null);
 
   const especificas = unidadesPorComponente.get(c.id) ?? [];
@@ -160,13 +162,23 @@ export default function ComponenteDetalhe({ componente: c, onFechar, onEditar, o
       <Modal titulo="Ficha do componente" onFechar={onFechar} largura="max-w-3xl">
         {/* Cabeçalho: imagem + identificação */}
         <div className="mb-5 flex flex-col gap-4 sm:flex-row">
-          <div className="flex h-40 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 sm:w-40">
-            {c.imagem_url ? (
-              <img src={c.imagem_url} alt={c.nome} className="h-full w-full object-contain" />
-            ) : (
+          {c.imagem_url ? (
+            <button
+              type="button"
+              onClick={() => setImagemGrande(true)}
+              title="Clique para ampliar"
+              className="group relative flex h-40 w-full shrink-0 cursor-zoom-in items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 sm:w-40"
+            >
+              <img src={c.imagem_url} alt={c.nome} className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105" />
+              <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <Maximize2 size={14} />
+              </span>
+            </button>
+          ) : (
+            <div className="flex h-40 w-full shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900 sm:w-40">
               <Package size={48} className="text-gray-300 dark:text-gray-600" />
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -455,6 +467,12 @@ export default function ComponenteDetalhe({ componente: c, onFechar, onEditar, o
           </button>
         </div>
       </Modal>
+
+      {imagemGrande && c.imagem_url && (
+        <Modal titulo={c.nome} onFechar={() => setImagemGrande(false)} largura="max-w-4xl">
+          <img src={c.imagem_url} alt={c.nome} className="mx-auto max-h-[75vh] w-auto max-w-full rounded-xl object-contain" />
+        </Modal>
+      )}
 
       {unidadeForm.aberto && (
         <UnidadeForm

@@ -7,6 +7,8 @@ import { useToast } from "../hooks/useToast";
 import { baixarCSV, COLUNAS_COMPONENTES, gerarCSV, interpretarComponentes, lerCSV, type LinhaImportada } from "../utils/csv";
 import { novoComponente, selecionarComponentes, tiposDe } from "../utils/componente";
 import type { OpcoesPdf } from "../utils/pdf";
+import type { OrcamentoStatus } from "../types";
+import { STATUS_ORCAMENTO } from "../utils/constants";
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 
@@ -27,6 +29,8 @@ export default function ImportExportPage() {
   const [pdfEstado, setPdfEstado] = useState(true);
   const [pdfEmprestimo, setPdfEmprestimo] = useState(true);
   const [pdfLocal, setPdfLocal] = useState(true);
+  const [pdfDescricao, setPdfDescricao] = useState(true);
+  const [statusPdf, setStatusPdf] = useState<OrcamentoStatus[]>(["pendente", "aprovado", "comprado"]);
   const tiposDisponiveis = useMemo(() => {
     const todos = Array.from(new Set(componentes.itens.flatMap(tiposDe)));
     return todos.sort((a, b) => (a === "Básico" ? -1 : b === "Básico" ? 1 : a.localeCompare(b, "pt-BR")));
@@ -40,12 +44,20 @@ export default function ImportExportPage() {
       mostrarEstado: pdfEstado,
       mostrarEmprestimo: pdfEmprestimo,
       mostrarLocalizacao: pdfLocal,
+      mostrarDescricao: pdfDescricao,
     };
     // carrega a biblioteca de PDF só quando for usada (ela é pesada)
     const { gerarPdfInventario } = await import("../utils/pdf");
     gerarPdfInventario({ componentes: componentes.itens, unidadesPorComponente, emprestimosPorComponente }, opcoes).save(
       `inventario_${hoje()}.pdf`,
     );
+  };
+
+  const exportarPdfOrcamento = async () => {
+    const qtd = orcamentos.itens.filter((o) => statusPdf.includes(o.status)).length;
+    if (qtd === 0) return toast("Nenhum item do orçamento com esses status.", "aviso");
+    const { gerarPdfOrcamento } = await import("../utils/pdf");
+    gerarPdfOrcamento(orcamentos.itens, { status: statusPdf }).save(`orcamento_${hoje()}.pdf`);
   };
 
   const exportarPrecos = () => {
@@ -225,6 +237,7 @@ export default function ImportExportPage() {
             { v: pdfEstado, set: setPdfEstado, l: "Estado (bom / duvidoso / ruim)" },
             { v: pdfEmprestimo, set: setPdfEmprestimo, l: "Empréstimos" },
             { v: pdfLocal, set: setPdfLocal, l: "Localização" },
+            { v: pdfDescricao, set: setPdfDescricao, l: "Descrição" },
           ].map((o) => (
             <label key={o.l} className="flex cursor-pointer items-center space-x-2">
               <input
@@ -240,6 +253,31 @@ export default function ImportExportPage() {
 
         <button onClick={() => void exportarPdf()} className="btn-primary">
           <Download size={18} /> Baixar PDF ({qtdNoPdf} {qtdNoPdf === 1 ? "componente" : "componentes"})
+        </button>
+      </div>
+
+      <h3 className="mb-3 flex items-center font-bold">
+        <FileType2 size={18} className="mr-2 text-orange-500" /> Exportar orçamento em PDF (para a financeira)
+      </h3>
+      <div className="card mb-8 p-5">
+        <p className="label">Quais status entram no PDF?</p>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {STATUS_ORCAMENTO.map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatusPdf(statusPdf.includes(st) ? statusPdf.filter((x) => x !== st) : [...statusPdf, st])}
+              className={`rounded-full border px-3 py-1 text-xs font-bold capitalize transition-all ${
+                statusPdf.includes(st)
+                  ? "border-orange-500 bg-orange-500 text-white"
+                  : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => void exportarPdfOrcamento()} className="btn-primary">
+          <Download size={18} /> Baixar PDF do orçamento
         </button>
       </div>
 
