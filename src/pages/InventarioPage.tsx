@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Package, Plus, Search } from "lucide-react";
+import { ArrowUpDown, ImageIcon, LayoutGrid, Package, Plus, Search } from "lucide-react";
 import ComponenteCard from "../components/inventario/ComponenteCard";
 import ComponenteDetalhe from "../components/inventario/ComponenteDetalhe";
 import ComponenteForm, { type OpcoesCriacao } from "../components/inventario/ComponenteForm";
@@ -30,6 +30,22 @@ export default function InventarioPage() {
   const [estadoFiltro, setEstadoFiltro] = useState<FiltroEstado>("todos");
   const [emprestimoFiltro, setEmprestimoFiltro] = useState<FiltroEmprestimo>("todos");
   const [ordem, setOrdem] = useState<OrdenacaoId>("nome-asc");
+
+  const [visao, setVisao] = useState<"cards" | "galeria">(() => {
+    try {
+      return localStorage.getItem("inventario_visao") === "galeria" ? "galeria" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const mudarVisao = (v: "cards" | "galeria") => {
+    setVisao(v);
+    try {
+      localStorage.setItem("inventario_visao", v);
+    } catch {
+      /* sem storage: só não lembra */
+    }
+  };
 
   const [formAberto, setFormAberto] = useState(false);
   const [editando, setEditando] = useState<Componente | null>(null);
@@ -166,14 +182,34 @@ export default function InventarioPage() {
 
       {/* Filtros */}
       <div className="mb-4 flex shrink-0 flex-col gap-3">
-        <div className="relative">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            className="input pl-10"
-            placeholder="Buscar por nome, tipo, localização, descrição..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              className="input pl-10"
+              placeholder="Buscar por nome, tipo, localização, descrição..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+          </div>
+          <div className="flex shrink-0 gap-1 rounded-2xl bg-gray-200 p-1 dark:bg-gray-800">
+            {[
+              { id: "cards" as const, icone: LayoutGrid, titulo: "Ver como cards" },
+              { id: "galeria" as const, icone: ImageIcon, titulo: "Ver só as imagens (galeria)" },
+            ].map((v) => (
+              <button
+                key={v.id}
+                onClick={() => mudarVisao(v.id)}
+                title={v.titulo}
+                aria-label={v.titulo}
+                className={`rounded-xl px-3 transition-all ${
+                  visao === v.id ? "bg-white text-orange-500 shadow dark:bg-gray-700" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                }`}
+              >
+                <v.icone size={18} />
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -267,6 +303,50 @@ export default function InventarioPage() {
             icone={Package}
             texto={componentes.itens.length === 0 ? "Nenhum componente cadastrado ainda." : "Nada encontrado com esses filtros."}
           />
+        ) : visao === "galeria" ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {filtrados.map((c) => {
+              const falta = statusEstoque(c) !== "ok";
+              const emprestado = resumirEmprestimos(c, emprestimosPorComponente.get(c.id) ?? []).emprestado;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setDetalheId(c.id)}
+                  title={c.nome}
+                  className="card group relative aspect-square cursor-pointer overflow-hidden transition-all duration-200 ease-out hover:-translate-y-1.5 hover:border-orange-500/60 hover:shadow-xl hover:shadow-orange-500/20 active:scale-[0.98]"
+                >
+                  {c.imagem_url ? (
+                    <img
+                      src={c.imagem_url}
+                      alt={c.nome}
+                      loading="lazy"
+                      className="h-full w-full bg-white object-contain p-2 transition-transform duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-3 text-gray-300 dark:text-gray-600">
+                      <Package size={40} />
+                      <span className="text-[10px] font-bold uppercase">sem imagem</span>
+                    </div>
+                  )}
+                  <span
+                    className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-black text-white shadow ${
+                      falta ? "bg-red-500" : "bg-gray-800/80"
+                    }`}
+                  >
+                    {c.quantidade}
+                  </span>
+                  {emprestado > 0 && (
+                    <span className="absolute left-2 top-2 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-black text-white shadow">
+                      {emprestado} emprestado(s)
+                    </span>
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2.5 pb-2 pt-6 text-left text-xs font-bold leading-tight text-white">
+                    <span className="line-clamp-2">{c.nome}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtrados.map((c) => (
