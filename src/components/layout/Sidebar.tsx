@@ -6,10 +6,11 @@ interface Props {
   setAberta: (v: boolean) => void;
   abaAtiva: TabId;
   onTrocar: (aba: TabId) => void;
-  qtdAlertas: number;
+  /** número vermelho ao lado do nome da aba */
+  badges: Partial<Record<TabId, number>>;
 }
 
-export default function Sidebar({ aberta, setAberta, abaAtiva, onTrocar, qtdAlertas }: Props) {
+export default function Sidebar({ aberta, setAberta, abaAtiva, onTrocar, badges }: Props) {
   return (
     <>
       {aberta && (
@@ -29,7 +30,8 @@ export default function Sidebar({ aberta, setAberta, abaAtiva, onTrocar, qtdAler
             aberta ? "justify-between px-4" : "justify-between px-4 md:justify-center md:px-0"
           }`}
         >
-          <span className={`text-xl font-bold tracking-wider text-orange-500 ${!aberta ? "md:hidden" : ""}`}>
+          <span className={`flex items-center text-xl font-bold tracking-wider text-orange-500 ${!aberta ? "md:hidden" : ""}`}>
+            <img src="/favicon.svg" alt="" className="mr-2 h-8 w-8" />
             INVENTÁRIO
           </span>
           <button
@@ -61,13 +63,13 @@ export default function Sidebar({ aberta, setAberta, abaAtiva, onTrocar, qtdAler
                   <Icone size={20} className={aberta ? "mr-4 shrink-0" : "mr-4 shrink-0 md:mr-0"} />
                   <span className={`whitespace-nowrap font-medium ${!aberta ? "md:hidden" : ""}`}>{id}</span>
 
-                  {id === "Alertas" && qtdAlertas > 0 && (
+                  {(badges[id] ?? 0) > 0 && (
                     <span
-                      className={`rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-black text-white ${
-                        aberta ? "ml-auto" : "ml-auto md:absolute md:right-2 md:top-1.5 md:ml-0"
-                      }`}
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-black text-white ${
+                        id === "Alertas" ? "bg-red-500" : "bg-blue-500"
+                      } ${aberta ? "ml-auto" : "ml-auto md:absolute md:right-2 md:top-1.5 md:ml-0"}`}
                     >
-                      {qtdAlertas}
+                      {badges[id]}
                     </span>
                   )}
                 </button>

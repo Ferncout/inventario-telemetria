@@ -1,30 +1,75 @@
-import { useRef, useState } from "react";
-import { BookOpen, Boxes, Download, FileSpreadsheet, FileText, Upload, Wallet } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { BookOpen, Boxes, Download, FileSpreadsheet, FileText, FileType2, Upload, Wallet } from "lucide-react";
 import PageHeader from "../components/ui/PageHeader";
 import { useAuth } from "../hooks/useAuth";
 import { useData } from "../hooks/useData";
 import { useToast } from "../hooks/useToast";
-import type { NovoComponente } from "../types";
-import { baixarCSV, COLUNAS_COMPONENTES, gerarCSV, interpretarComponentes, lerCSV } from "../utils/csv";
+import { baixarCSV, COLUNAS_COMPONENTES, gerarCSV, interpretarComponentes, lerCSV, type LinhaImportada } from "../utils/csv";
+import { novoComponente, selecionarComponentes, tiposDe } from "../utils/componente";
+import type { OpcoesPdf } from "../utils/pdf";
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 
 export default function ImportExportPage() {
-  const { componentes, diario, orcamentos } = useData();
+  const { componentes, diario, orcamentos, precos, unidadesPorComponente, emprestimosPorComponente } = useData();
   const { podeEditar } = useAuth();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [nomeArquivo, setNomeArquivo] = useState("");
-  const [validos, setValidos] = useState<NovoComponente[]>([]);
+  const [validos, setValidos] = useState<LinhaImportada[]>([]);
   const [erros, setErros] = useState<string[]>([]);
   const [atualizarExistentes, setAtualizarExistentes] = useState(true);
   const [importando, setImportando] = useState(false);
 
+  // PDF
+  const [tiposPdf, setTiposPdf] = useState<string[]>([]);
+  const [pdfEstado, setPdfEstado] = useState(true);
+  const [pdfEmprestimo, setPdfEmprestimo] = useState(true);
+  const [pdfLocal, setPdfLocal] = useState(true);
+  const tiposDisponiveis = useMemo(() => {
+    const todos = Array.from(new Set(componentes.itens.flatMap(tiposDe)));
+    return todos.sort((a, b) => (a === "Básico" ? -1 : b === "Básico" ? 1 : a.localeCompare(b, "pt-BR")));
+  }, [componentes.itens]);
+  const qtdNoPdf = selecionarComponentes(componentes.itens, tiposPdf).length;
+
+  const exportarPdf = async () => {
+    if (qtdNoPdf === 0) return toast("Nenhum componente com esses tipos.", "aviso");
+    const opcoes: OpcoesPdf = {
+      tipos: tiposPdf,
+      mostrarEstado: pdfEstado,
+      mostrarEmprestimo: pdfEmprestimo,
+      mostrarLocalizacao: pdfLocal,
+    };
+    // carrega a biblioteca de PDF só quando for usada (ela é pesada)
+    const { gerarPdfInventario } = await import("../utils/pdf");
+    gerarPdfInventario({ componentes: componentes.itens, unidadesPorComponente, emprestimosPorComponente }, opcoes).save(
+      `inventario_${hoje()}.pdf`,
+    );
+  };
+
+  const exportarPrecos = () => {
+    if (precos.itens.length === 0) return toast("Não há preços registrados.", "aviso");
+    baixarCSV(
+      `melhores_precos_${hoje()}.csv`,
+      gerarCSV(precos.itens as unknown as Record<string, unknown>[], [
+        { chave: "componente_nome", titulo: "componente" },
+        { chave: "loja", titulo: "loja" },
+        { chave: "preco_unitario", titulo: "preco_unitario" },
+        { chave: "data_compra", titulo: "data_compra" },
+        { chave: "link", titulo: "link" },
+        { chave: "observacao", titulo: "observacao" },
+      ]),
+    );
+  };
+
   // ---------- Exportações ----------
   const exportarComponentes = () => {
     if (componentes.itens.length === 0) return toast("Não há componentes para exportar.", "aviso");
-    baixarCSV(`inventario_${hoje()}.csv`, gerarCSV(componentes.itens as unknown as Record<string, unknown>[], COLUNAS_COMPONENTES));
+    baixarCSV(`inventario_${hoje()}.csv`, gerarCSV(
+        componentes.itens.map((c) => ({ ...c, outros_tipos: (c.outros_tipos ?? []).join(" | ") })) as unknown as Record<string, unknown>[],
+        COLUNAS_COMPONENTES,
+      ));
   };
 
   const exportarDiario = () => {
@@ -63,8 +108,8 @@ export default function ImportExportPage() {
 
   const baixarModelo = () => {
     const exemplo = [
-      { nome: "ESP32 DevKit V1", tipo: "Microcontrolador", quantidade: 5, quantidade_minima: 2, localizacao: "Armário 1", descricao: "30 pinos" },
-      { nome: "Resistor 10kΩ", tipo: "Resistor", quantidade: 100, quantidade_minima: 20, localizacao: "Gaveta B", descricao: "" },
+      { nome: "ESP32 DevKit V1", tipo: "Microcontrolador", quantidade: 5, quantidade_minima: 2, localizacao: "Armário 1", descricao: "30 pinos", outros_tipos: "", datasheet_url: "" },
+      { nome: "Resistor 10kΩ", tipo: "Resistor", quantidade: 100, quantidade_minima: 20, localizacao: "Gaveta B", descricao: "", outros_tipos: "Básico", datasheet_url: "" },
     ];
     baixarCSV("modelo_importacao.csv", gerarCSV(exemplo, COLUNAS_COMPONENTES));
   };
@@ -90,14 +135,14 @@ export default function ImportExportPage() {
   const confirmarImportacao = async () => {
     setImportando(true);
     const porNome = new Map(componentes.itens.map((c) => [c.nome.toLowerCase(), c]));
-    const novos: NovoComponente[] = [];
+    const novos = [] as ReturnType<typeof novoComponente>[];
     let atualizados = 0;
     let ignorados = 0;
 
     for (const linha of validos) {
       const existente = porNome.get(linha.nome.toLowerCase());
       if (!existente) {
-        novos.push(linha);
+        novos.push(novoComponente(linha));
       } else if (atualizarExistentes) {
         if (await componentes.atualizar(existente.id, linha)) atualizados++;
       } else {
@@ -116,6 +161,7 @@ export default function ImportExportPage() {
     { icone: Boxes, titulo: "Inventário", desc: `${componentes.itens.length} componentes`, acao: exportarComponentes },
     { icone: BookOpen, titulo: "Diário de Bordo", desc: `${diario.itens.length} anotações`, acao: exportarDiario },
     { icone: Wallet, titulo: "Orçamento", desc: `${orcamentos.itens.length} itens`, acao: exportarOrcamento },
+    { icone: Wallet, titulo: "Melhores Preços", desc: `${precos.itens.length} registros`, acao: exportarPrecos },
   ];
 
   return (
@@ -130,7 +176,7 @@ export default function ImportExportPage() {
       <h3 className="mb-3 flex items-center font-bold">
         <Download size={18} className="mr-2 text-orange-500" /> Exportar CSV
       </h3>
-      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {cartoes.map(({ icone: Icone, titulo, desc, acao }) => (
           <button key={titulo} onClick={acao} className="card p-5 text-left transition-all hover:scale-[1.02] hover:shadow-lg">
             <Icone className="mb-3 text-orange-500" size={26} />
@@ -141,6 +187,60 @@ export default function ImportExportPage() {
             </span>
           </button>
         ))}
+      </div>
+
+      <h3 className="mb-3 flex items-center font-bold">
+        <FileType2 size={18} className="mr-2 text-orange-500" /> Exportar inventário em PDF
+      </h3>
+      <div className="card mb-8 p-5">
+        <p className="label">Quais tipos entram no PDF?</p>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => setTiposPdf([])}
+            className={`rounded-full border px-3 py-1 text-xs font-bold transition-all ${
+              tiposPdf.length === 0
+                ? "border-orange-500 bg-orange-500 text-white"
+                : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+            }`}
+          >
+            Todos
+          </button>
+          {tiposDisponiveis.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTiposPdf(tiposPdf.includes(t) ? tiposPdf.filter((x) => x !== t) : [...tiposPdf, t])}
+              className={`rounded-full border px-3 py-1 text-xs font-bold transition-all ${
+                tiposPdf.includes(t)
+                  ? "border-orange-500 bg-orange-500 text-white"
+                  : "border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          {[
+            { v: pdfEstado, set: setPdfEstado, l: "Estado (bom / duvidoso / ruim)" },
+            { v: pdfEmprestimo, set: setPdfEmprestimo, l: "Empréstimos" },
+            { v: pdfLocal, set: setPdfLocal, l: "Localização" },
+          ].map((o) => (
+            <label key={o.l} className="flex cursor-pointer items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={o.v}
+                onChange={(e) => o.set(e.target.checked)}
+                className="h-4 w-4 rounded text-orange-500 focus:ring-orange-500"
+              />
+              <span>{o.l}</span>
+            </label>
+          ))}
+        </div>
+
+        <button onClick={() => void exportarPdf()} className="btn-primary">
+          <Download size={18} /> Baixar PDF ({qtdNoPdf} {qtdNoPdf === 1 ? "componente" : "componentes"})
+        </button>
       </div>
 
       <h3 className="mb-3 flex items-center font-bold">
@@ -157,7 +257,9 @@ export default function ImportExportPage() {
             <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">quantidade</code>,{" "}
             <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">quantidade_minima</code>,{" "}
             <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">localizacao</code>,{" "}
-            <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">descricao</code>. Separador “;” ou “,” — detectado
+            <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">descricao</code>,{" "}
+            <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">outros_tipos</code> (separados por |) e{" "}
+            <code className="rounded bg-gray-200 px-1 dark:bg-gray-700">datasheet</code>. Separador “;” ou “,” — detectado
             automaticamente.
           </p>
 

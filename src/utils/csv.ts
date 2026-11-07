@@ -86,7 +86,16 @@ export const COLUNAS_COMPONENTES: Coluna[] = [
   { chave: "quantidade_minima", titulo: "quantidade_minima" },
   { chave: "localizacao", titulo: "localizacao" },
   { chave: "descricao", titulo: "descricao" },
+  { chave: "outros_tipos", titulo: "outros_tipos" },
+  { chave: "datasheet_url", titulo: "datasheet" },
 ];
+
+/** Campos que o CSV consegue preencher (os demais — imagem, unidades, características — só pelo site). */
+export type LinhaImportada = Pick<
+  NovoComponente,
+  "nome" | "tipo" | "quantidade" | "quantidade_minima" | "localizacao" | "descricao"
+> &
+  Partial<Pick<NovoComponente, "outros_tipos" | "datasheet_url">>;
 
 const normalizar = (s: string) =>
   s
@@ -96,7 +105,9 @@ const normalizar = (s: string) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
 
-const ALIAS: Record<string, keyof NovoComponente> = {
+type CampoCSV = keyof LinhaImportada;
+
+const ALIAS: Record<string, CampoCSV> = {
   nome: "nome",
   componente: "nome",
   item: "nome",
@@ -113,10 +124,15 @@ const ALIAS: Record<string, keyof NovoComponente> = {
   local: "localizacao",
   descricao: "descricao",
   observacao: "descricao",
+  outros_tipos: "outros_tipos",
+  tipos_extras: "outros_tipos",
+  etiquetas: "outros_tipos",
+  datasheet: "datasheet_url",
+  datasheet_url: "datasheet_url",
 };
 
 export interface ResultadoImportacao {
-  validos: NovoComponente[];
+  validos: LinhaImportada[];
   erros: string[];
 }
 
@@ -130,7 +146,7 @@ export function interpretarComponentes(matriz: string[][]): ResultadoImportacao 
     return { validos: [], erros: ['Coluna "nome" não encontrada no cabeçalho.'] };
   }
 
-  const validos: NovoComponente[] = [];
+  const validos: LinhaImportada[] = [];
   const erros: string[] = [];
 
   const lerInteiro = (valor: string | undefined, padrao: number): number | null => {
@@ -141,7 +157,7 @@ export function interpretarComponentes(matriz: string[][]): ResultadoImportacao 
 
   matriz.slice(1).forEach((cols, idx) => {
     const numeroLinha = idx + 2;
-    const registro: Partial<Record<keyof NovoComponente, string>> = {};
+    const registro: Partial<Record<CampoCSV, string>> = {};
     cabecalho.forEach((campo, i) => {
       if (campo) registro[campo] = (cols[i] ?? "").trim();
     });
@@ -164,6 +180,16 @@ export function interpretarComponentes(matriz: string[][]): ResultadoImportacao 
       quantidade_minima: minima,
       localizacao: registro.localizacao || null,
       descricao: registro.descricao || null,
+      // só inclui se a coluna existe no arquivo (assim não apaga o que já está cadastrado)
+      ...(cabecalho.includes("outros_tipos")
+        ? {
+            outros_tipos: (registro.outros_tipos ?? "")
+              .split(/[|,]/)
+              .map((t) => t.trim())
+              .filter(Boolean),
+          }
+        : {}),
+      ...(cabecalho.includes("datasheet_url") ? { datasheet_url: registro.datasheet_url || null } : {}),
     });
   });
 

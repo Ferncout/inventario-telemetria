@@ -3,10 +3,12 @@ import type { TabId } from "../../config/tabs";
 import { useData } from "../../hooks/useData";
 import AlertasPage from "../../pages/AlertasPage";
 import DiarioPage from "../../pages/DiarioPage";
+import EmprestimosPage from "../../pages/EmprestimosPage";
 import EquipePage from "../../pages/EquipePage";
 import ImportExportPage from "../../pages/ImportExportPage";
 import InventarioPage from "../../pages/InventarioPage";
 import OrcamentoPage from "../../pages/OrcamentoPage";
+import PrecosPage from "../../pages/PrecosPage";
 import ResumoPage from "../../pages/ResumoPage";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
@@ -22,7 +24,8 @@ function abaInicial(): TabId {
 }
 
 export default function AppShell() {
-  const { alertas } = useData();
+  const { alertas, emprestimos } = useData();
+  const pedidosPendentes = emprestimos.itens.filter((e) => e.status === "solicitado").length;
   const [aba, setAba] = useState<TabId>(abaInicial);
   const [menuAberto, setMenuAberto] = useState(false);
 
@@ -43,8 +46,12 @@ export default function AppShell() {
         return <AlertasPage />;
       case "Diário de Bordo":
         return <DiarioPage />;
+      case "Empréstimos":
+        return <EmprestimosPage />;
       case "Orçamento":
         return <OrcamentoPage />;
+      case "Melhores Preços":
+        return <PrecosPage />;
       case "Importar/Exportar":
         return <ImportExportPage />;
       case "Equipe":
@@ -61,7 +68,7 @@ export default function AppShell() {
         setAberta={setMenuAberto}
         abaAtiva={aba}
         onTrocar={trocarAba}
-        qtdAlertas={alertas.length}
+        badges={{ Alertas: alertas.length, Empréstimos: pedidosPendentes }}
       />
       <main className="flex h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden">
         <Header onAbrirMenu={() => setMenuAberto(true)} />

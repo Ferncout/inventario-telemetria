@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 interface Props {
   titulo: string;
@@ -7,12 +7,26 @@ interface Props {
   largura?: string; // ex: "max-w-lg"
 }
 
+// Pilha de modais abertos: o Esc fecha só o de cima
+const pilha: symbol[] = [];
+
 export default function Modal({ titulo, onFechar, children, largura = "max-w-lg" }: Props) {
+  const idRef = useRef(Symbol("modal"));
+  const fecharRef = useRef(onFechar);
+  fecharRef.current = onFechar;
+
   useEffect(() => {
-    const aoApertar = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    const id = idRef.current;
+    pilha.push(id);
+    const aoApertar = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && pilha[pilha.length - 1] === id) fecharRef.current();
+    };
     window.addEventListener("keydown", aoApertar);
-    return () => window.removeEventListener("keydown", aoApertar);
-  }, [onFechar]);
+    return () => {
+      window.removeEventListener("keydown", aoApertar);
+      pilha.splice(pilha.indexOf(id), 1);
+    };
+  }, []);
 
   return (
     <div

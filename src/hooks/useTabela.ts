@@ -7,6 +7,8 @@ export interface Tabela<T extends { id: number }> {
   loading: boolean;
   carregar: () => Promise<void>;
   criar: (dados: Partial<Omit<T, "id">>) => Promise<boolean>;
+  /** Cria e devolve a linha criada (com o id), ou null se deu erro. */
+  criarRetornando: (dados: Partial<Omit<T, "id">>) => Promise<T | null>;
   criarVarios: (linhas: Partial<Omit<T, "id">>[]) => Promise<boolean>;
   atualizar: (id: number, dados: Partial<Omit<T, "id">>) => Promise<boolean>;
   remover: (id: number) => Promise<boolean>;
@@ -41,6 +43,15 @@ export function useTabela<T extends { id: number }>(tabela: string, colunaOrdem:
 
   const criar: Tabela<T>["criar"] = (dados) =>
     executar(supabase.from(tabela).insert([dados] as never), "Erro ao salvar");
+  const criarRetornando: Tabela<T>["criarRetornando"] = async (dados) => {
+    const { data, error } = await supabase.from(tabela).insert([dados] as never).select().single();
+    if (error) {
+      toast(`Erro ao salvar: ${error.message}`, "erro");
+      return null;
+    }
+    await carregar();
+    return data as T;
+  };
   const criarVarios: Tabela<T>["criarVarios"] = (linhas) =>
     executar(supabase.from(tabela).insert(linhas as never), "Erro ao salvar");
   const atualizar: Tabela<T>["atualizar"] = (id, dados) =>
@@ -48,5 +59,5 @@ export function useTabela<T extends { id: number }>(tabela: string, colunaOrdem:
   const remover: Tabela<T>["remover"] = (id) =>
     executar(supabase.from(tabela).delete().eq("id", id), "Erro ao apagar");
 
-  return { itens, loading, carregar, criar, criarVarios, atualizar, remover };
+  return { itens, loading, carregar, criar, criarRetornando, criarVarios, atualizar, remover };
 }

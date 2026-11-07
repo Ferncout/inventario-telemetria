@@ -8,6 +8,7 @@ import { useData } from "../hooks/useData";
 import { useToast } from "../hooks/useToast";
 import type { Orcamento, OrcamentoStatus } from "../types";
 import { STATUS_ORCAMENTO, TIPOS_COMPONENTE } from "../utils/constants";
+import { novoComponente } from "../utils/componente";
 import { formatarMoeda } from "../utils/format";
 
 const COR_STATUS: Record<OrcamentoStatus, string> = {
@@ -67,14 +68,7 @@ export default function OrcamentoPage() {
     const existente = componentes.itens.find((c) => c.nome.toLowerCase() === o.nome.toLowerCase());
     const ok = existente
       ? await componentes.atualizar(existente.id, { quantidade: existente.quantidade + o.quantidade })
-      : await componentes.criar({
-          nome: o.nome,
-          tipo: o.tipo,
-          quantidade: o.quantidade,
-          quantidade_minima: 0,
-          localizacao: null,
-          descricao: null,
-        });
+      : await componentes.criar(novoComponente({ nome: o.nome, tipo: o.tipo, quantidade: o.quantidade }));
     if (ok) {
       await orcamentos.atualizar(o.id, { estocado: true });
       toast(`${o.quantidade}× "${o.nome}" adicionado(s) ao estoque!`);

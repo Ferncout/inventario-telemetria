@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Boxes, LayoutDashboard, PackageX, Wallet } from "lucide-react";
+import { AlertTriangle, BookOpen, Boxes, HandCoins, LayoutDashboard, PackageX, Wallet } from "lucide-react";
 import PageHeader from "../components/ui/PageHeader";
 import Spinner from "../components/ui/Spinner";
 import type { TabId } from "../config/tabs";
@@ -7,7 +7,7 @@ import { formatarData, formatarMoeda } from "../utils/format";
 import { statusEstoque } from "../utils/estoque";
 
 export default function ResumoPage({ onIrPara }: { onIrPara: (aba: TabId) => void }) {
-  const { componentes, diario, orcamentos, alertas } = useData();
+  const { componentes, diario, orcamentos, emprestimos, alertas } = useData();
 
   if (componentes.loading) return <Spinner />;
 
@@ -18,6 +18,9 @@ export default function ResumoPage({ onIrPara }: { onIrPara: (aba: TabId) => voi
   const orcamentoPendente = orcamentos.itens
     .filter((o) => o.status === "pendente" || o.status === "aprovado")
     .reduce((s, o) => s + o.quantidade * Number(o.preco_unitario), 0);
+
+  const emprestadas = emprestimos.itens.filter((e) => e.status === "emprestado").reduce((s, e) => s + e.quantidade, 0);
+  const pedidos = emprestimos.itens.filter((e) => e.status === "solicitado").length;
 
   const porTipo = Object.entries(
     componentes.itens.reduce<Record<string, number>>((acc, c) => {
@@ -106,6 +109,18 @@ export default function ResumoPage({ onIrPara }: { onIrPara: (aba: TabId) => voi
             </h3>
             <p className="text-xs text-gray-500">Pendente + aprovado, ainda não comprado.</p>
             <p className="mt-2 text-3xl font-black tabular-nums text-emerald-500">{formatarMoeda(orcamentoPendente)}</p>
+          </button>
+
+          <button onClick={() => onIrPara("Empréstimos")} className="card p-5 text-left transition-all hover:scale-[1.01]">
+            <h3 className="mb-1 flex items-center font-bold">
+              <HandCoins size={18} className="mr-2 text-blue-500" /> Empréstimos
+            </h3>
+            <p className="text-xs text-gray-500">
+              {pedidos > 0 ? `${pedidos} pedido(s) aguardando resposta.` : "Nenhum pedido aguardando."}
+            </p>
+            <p className="mt-2 text-3xl font-black tabular-nums text-blue-500">
+              {emprestadas} <span className="text-sm font-bold text-gray-500">unidades emprestadas</span>
+            </p>
           </button>
 
           <div className="card flex-1 p-5">

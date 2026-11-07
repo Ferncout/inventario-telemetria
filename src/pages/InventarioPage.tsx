@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Package, Plus, Search } from "lucide-react";
+import { ArrowUpDown, Package, Plus, Search } from "lucide-react";
 import ComponenteCard from "../components/inventario/ComponenteCard";
-import ComponenteForm from "../components/inventario/ComponenteForm";
+import ComponenteDetalhe from "../components/inventario/ComponenteDetalhe";
+import ComponenteForm, { type OpcoesCriacao } from "../components/inventario/ComponenteForm";
+import EmprestimoForm from "../components/emprestimos/EmprestimoForm";
 import EmptyState from "../components/ui/EmptyState";
 import PageHeader from "../components/ui/PageHeader";
 import Spinner from "../components/ui/Spinner";
@@ -9,52 +11,136 @@ import { useAuth } from "../hooks/useAuth";
 import { useData } from "../hooks/useData";
 import { useToast } from "../hooks/useToast";
 import type { Componente, NovoComponente, StatusEstoque } from "../types";
-import { TIPOS_COMPONENTE } from "../utils/constants";
+import { OPCOES_ORDENACAO, TIPOS_COMPONENTE, type OrdenacaoId } from "../utils/constants";
+import { resumirEmprestimos, resumirUnidades, tiposDe } from "../utils/componente";
 import { statusEstoque } from "../utils/estoque";
+import { apagarImagem } from "../utils/imagem";
+
+type FiltroEstado = "todos" | "bom" | "duvidoso" | "ruim";
+type FiltroEmprestimo = "todos" | "emprestados" | "livres";
 
 export default function InventarioPage() {
-  const { componentes } = useData();
+  const { componentes, unidades, unidadesPorComponente, emprestimosPorComponente } = useData();
   const { podeEditar, podeExcluir } = useAuth();
   const { toast } = useToast();
 
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("Todos");
   const [statusFiltro, setStatusFiltro] = useState<"todos" | StatusEstoque>("todos");
+  const [estadoFiltro, setEstadoFiltro] = useState<FiltroEstado>("todos");
+  const [emprestimoFiltro, setEmprestimoFiltro] = useState<FiltroEmprestimo>("todos");
+  const [ordem, setOrdem] = useState<OrdenacaoId>("nome-asc");
+
   const [formAberto, setFormAberto] = useState(false);
   const [editando, setEditando] = useState<Componente | null>(null);
+  const [detalheId, setDetalheId] = useState<number | null>(null);
+  const [pedindo, setPedindo] = useState<Componente | null>(null);
 
   // Tipos: os padrões + qualquer tipo novo que apareceu (cadastro manual ou importação)
-  const tiposExtras = useMemo(
-    () => Array.from(new Set(componentes.itens.map((c) => c.tipo))).filter((t) => !TIPOS_COMPONENTE.includes(t)),
+  const todosOsTipos = useMemo(
+    () => Array.from(new Set(componentes.itens.flatMap(tiposDe))),
     [componentes.itens],
   );
+  const tiposExtras = useMemo(() => todosOsTipos.filter((t) => !TIPOS_COMPONENTE.includes(t)), [todosOsTipos]);
+  // "Básico" sempre aparece primeiro quando existir
   const tiposPresentes = useMemo(
-    () => Array.from(new Set(componentes.itens.map((c) => c.tipo))).sort((a, b) => a.localeCompare(b)),
-    [componentes.itens],
+    () =>
+      [...todosOsTipos].sort((a, b) =>
+        a === "Básico" ? -1 : b === "Básico" ? 1 : a.localeCompare(b, "pt-BR"),
+      ),
+    [todosOsTipos],
   );
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    return componentes.itens.filter((c) => {
-      if (tipoFiltro !== "Todos" && c.tipo !== tipoFiltro) return false;
+    const lista = componentes.itens.filter((c) => {
+      if (tipoFiltro !== "Todos" && !tiposDe(c).includes(tipoFiltro)) return false;
       if (statusFiltro !== "todos" && statusEstoque(c) !== statusFiltro) return false;
-      if (!termo) return true;
-      return [c.nome, c.tipo, c.localizacao, c.descricao].some((v) => v?.toLowerCase().includes(termo));
-    });
-  }, [componentes.itens, busca, tipoFiltro, statusFiltro]);
 
-  const salvar = async (dados: NovoComponente) => {
-    const ok = editando ? await componentes.atualizar(editando.id, dados) : await componentes.criar(dados);
-    if (ok) toast(editando ? "Componente atualizado!" : "Componente cadastrado!");
-    return ok;
+      if (estadoFiltro !== "todos") {
+        const r = resumirUnidades(c, unidadesPorComponente.get(c.id) ?? []);
+        if (r[estadoFiltro] === 0) return false;
+      }
+      if (emprestimoFiltro !== "todos") {
+        const emprestado = resumirEmprestimos(c, emprestimosPorComponente.get(c.id) ?? []).emprestado > 0;
+        if (emprestimoFiltro === "emprestados" ? !emprestado : emprestado) return false;
+      }
+
+      if (!termo) return true;
+      return [c.nome, ...tiposDe(c), c.localizacao, c.descricao, c.descricao_completa].some((v) =>
+        v?.toLowerCase().includes(termo),
+      );
+    });
+
+    return lista.sort((a, b) => {
+      switch (ordem) {
+        case "nome-desc":
+          return b.nome.localeCompare(a.nome, "pt-BR", { sensitivity: "base" });
+        case "qtd-desc":
+          return b.quantidade - a.quantidade || a.nome.localeCompare(b.nome, "pt-BR");
+        case "qtd-asc":
+          return a.quantidade - b.quantidade || a.nome.localeCompare(b.nome, "pt-BR");
+        case "recentes":
+          return b.created_at.localeCompare(a.created_at);
+        default:
+          return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
+      }
+    });
+  }, [
+    componentes.itens,
+    busca,
+    tipoFiltro,
+    statusFiltro,
+    estadoFiltro,
+    emprestimoFiltro,
+    ordem,
+    unidadesPorComponente,
+    emprestimosPorComponente,
+  ]);
+
+  const salvar = async (dados: NovoComponente, opcoes: OpcoesCriacao) => {
+    if (editando) {
+      // se a imagem foi trocada/removida, apaga a antiga do storage
+      if (editando.imagem_url && editando.imagem_url !== dados.imagem_url) void apagarImagem(editando.imagem_url);
+      const ok = await componentes.atualizar(editando.id, dados);
+      if (ok) toast("Componente atualizado!");
+      return ok;
+    }
+
+    const criado = await componentes.criarRetornando(dados);
+    if (!criado) return false;
+    if (opcoes.unidadesIndividuais && dados.quantidade > 0) {
+      const linhas = Array.from({ length: dados.quantidade }, (_, i) => ({
+        componente_id: criado.id,
+        rotulo: `#${i + 1}`,
+        estado: "bom" as const,
+        caracteristicas: dados.caracteristicas,
+        observacao: null,
+      }));
+      await unidades.criarVarios(linhas);
+    }
+    toast("Componente cadastrado!");
+    return true;
   };
 
   const excluir = async (c: Componente) => {
     if (!window.confirm(`Apagar "${c.nome}" do inventário?`)) return;
-    if (await componentes.remover(c.id)) toast("Componente apagado.", "aviso");
+    if (await componentes.remover(c.id)) {
+      void apagarImagem(c.imagem_url);
+      setDetalheId(null);
+      toast("Componente apagado.", "aviso");
+    }
   };
 
-  const contagemPorTipo = (tipo: string) => componentes.itens.filter((c) => c.tipo === tipo).length;
+  const abrirEdicao = (c: Componente) => {
+    setEditando(c);
+    setFormAberto(true);
+  };
+
+  const contagemPorTipo = (tipo: string) => componentes.itens.filter((c) => tiposDe(c).includes(tipo)).length;
+  const detalhe = detalheId != null ? componentes.itens.find((c) => c.id === detalheId) ?? null : null;
+  const filtrosAtivos =
+    busca !== "" || tipoFiltro !== "Todos" || statusFiltro !== "todos" || estadoFiltro !== "todos" || emprestimoFiltro !== "todos";
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl min-h-0 animate-fade-in flex-col">
@@ -62,7 +148,7 @@ export default function InventarioPage() {
         icone={Package}
         cor="orange"
         titulo="Inventário"
-        subtitulo="Componentes eletrônicos disponíveis no galpão."
+        subtitulo="Componentes eletrônicos disponíveis no galpão. Clique em um card para ver a ficha completa."
         acao={
           podeEditar && (
             <button
@@ -80,29 +166,67 @@ export default function InventarioPage() {
 
       {/* Filtros */}
       <div className="mb-4 flex shrink-0 flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              className="input pl-10"
-              placeholder="Buscar por nome, localização, descrição..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-          </div>
-          <select
-            className="input sm:w-52"
-            value={statusFiltro}
-            onChange={(e) => setStatusFiltro(e.target.value as typeof statusFiltro)}
-          >
-            <option value="todos">Todos os status</option>
-            <option value="ok">OK</option>
-            <option value="baixo">Estoque baixo</option>
-            <option value="falta">Em falta</option>
-          </select>
+        <div className="relative">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            className="input pl-10"
+            placeholder="Buscar por nome, tipo, localização, descrição..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <select
+            className="input"
+            value={statusFiltro}
+            onChange={(e) => setStatusFiltro(e.target.value as typeof statusFiltro)}
+            title="Nível de estoque"
+          >
+            <option value="todos">Estoque: todos</option>
+            <option value="ok">Estoque: OK</option>
+            <option value="baixo">Estoque: baixo</option>
+            <option value="falta">Estoque: em falta</option>
+          </select>
+          <select
+            className="input"
+            value={estadoFiltro}
+            onChange={(e) => setEstadoFiltro(e.target.value as FiltroEstado)}
+            title="Condição das unidades"
+          >
+            <option value="todos">Condição: todas</option>
+            <option value="bom">Com unidades boas</option>
+            <option value="duvidoso">Com unidades duvidosas</option>
+            <option value="ruim">Com unidades ruins</option>
+          </select>
+          <select
+            className="input"
+            value={emprestimoFiltro}
+            onChange={(e) => setEmprestimoFiltro(e.target.value as FiltroEmprestimo)}
+            title="Empréstimo"
+          >
+            <option value="todos">Empréstimo: todos</option>
+            <option value="emprestados">Emprestados</option>
+            <option value="livres">Sem empréstimo</option>
+          </select>
+          <div className="relative">
+            <ArrowUpDown size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <select
+              className="input pl-9"
+              value={ordem}
+              onChange={(e) => setOrdem(e.target.value as OrdenacaoId)}
+              title="Ordenar por"
+            >
+              {OPCOES_ORDENACAO.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           {["Todos", ...tiposPresentes].map((t) => (
             <button
               key={t}
@@ -117,6 +241,20 @@ export default function InventarioPage() {
               {t !== "Todos" && <span className="ml-1.5 opacity-70">{contagemPorTipo(t)}</span>}
             </button>
           ))}
+          {filtrosAtivos && (
+            <button
+              onClick={() => {
+                setBusca("");
+                setTipoFiltro("Todos");
+                setStatusFiltro("todos");
+                setEstadoFiltro("todos");
+                setEmprestimoFiltro("todos");
+              }}
+              className="ml-auto text-xs font-bold text-orange-500 hover:underline"
+            >
+              Limpar filtros ({filtrados.length} de {componentes.itens.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -135,19 +273,29 @@ export default function InventarioPage() {
               <ComponenteCard
                 key={c.id}
                 item={c}
+                unidades={unidadesPorComponente.get(c.id) ?? []}
+                emprestimos={emprestimosPorComponente.get(c.id) ?? []}
                 podeEditar={podeEditar}
                 podeExcluir={podeExcluir}
+                onAbrir={() => setDetalheId(c.id)}
+                onPedir={() => setPedindo(c)}
                 onAjustar={(delta) => void componentes.atualizar(c.id, { quantidade: Math.max(0, c.quantidade + delta) })}
-                onEditar={() => {
-                  setEditando(c);
-                  setFormAberto(true);
-                }}
+                onEditar={() => abrirEdicao(c)}
                 onExcluir={() => void excluir(c)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {detalhe && (
+        <ComponenteDetalhe
+          componente={detalhe}
+          onFechar={() => setDetalheId(null)}
+          onEditar={() => abrirEdicao(detalhe)}
+          onExcluir={() => void excluir(detalhe)}
+        />
+      )}
 
       {formAberto && (
         <ComponenteForm
@@ -157,6 +305,8 @@ export default function InventarioPage() {
           onFechar={() => setFormAberto(false)}
         />
       )}
+
+      {pedindo && <EmprestimoForm modo="solicitar" componente={pedindo} onFechar={() => setPedindo(null)} />}
     </div>
   );
 }
